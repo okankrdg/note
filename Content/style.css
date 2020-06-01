@@ -1,0 +1,47 @@
+﻿body {
+    padding-top:56px;
+}
+.page{
+    display:none;
+}
+
+.message{
+    display: none;
+    height:100%;
+}
+ .message ul {
+     margin-bottom: 0;
+}
+.loadingmodal {
+    display: none;
+    position: fixed;
+    z-index: 1000;
+    top: 0;
+    left: 0;
+    height: 100%;
+    width: 100%;
+    background: rgba( 255, 255, 255, .8 ) url('http://i.stack.imgur.com/FhHRx.gif') 50% 50% no-repeat;
+}
+
+/* When the body has the loading class, we turn
+   the scrollbar off with overflow:hidden */
+body.loading .loadingmodal {
+    overflow: hidden;
+}
+
+/* Anytime the body has the loading class, our
+   modal element will be visible */
+body.loading .loadingmodal {
+    display: block;
+}
+.login-tabs-container{
+    margin-top:40px;
+}
+/*#notes{
+    position: fixed;
+    overflow-y: scroll;
+    width:auto;
+    top: 20%;
+    bottom: 0%;
+    margin-bottom:10px;
+}*/
