@@ -13,7 +13,6 @@
      margin-bottom: 0;
 }
 .loadingmodal {
-    display: none;
     position: fixed;
     z-index: 1000;
     top: 0;

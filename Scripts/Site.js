@@ -1,256 +1,332 @@
-﻿
+﻿//Angular JS version
+var apiUrl = 'https://localhost:44339/';
+var app = angular.module("myApp", ["ngRoute"]);
+app.directive("messages", function () {
+    return {
+        templateUrl: "directives/messages.html"
+    };
+});
+
+app.config(function ($routeProvider) {
+    $routeProvider
+        .when("/", {
+            templateUrl: "pages/app.html", controller: "appController"
+        })
+        .when("/login", {
+            templateUrl: "pages/login.html", controller: "loginController"
+        })
+
+}).run(function ($rootScope, $location) {
+    $rootScope.update = function (srcObj, destObj) {
+        for (var key in destObj) {
+            if (destObj.hasOwnProperty(key) && srcObj.hasOwnProperty(key)) {
+                destObj[key] = srcObj[key];
+            }
+        }
+    }
+  
+
+    $rootScope.loginData = function () {
+
+        var loginDataJson = localStorage["login"] || sessionStorage["login"];
+        if (!loginDataJson) {
+            return null;
+        }
+        try {
+            return JSON.parse(loginDataJson);
+        } catch (e) {
+            return null;
+        }
+
+    };
+    $rootScope.isLoggedIn = function () {
+        if ($rootScope.loginData()) {
+            return true;
+        }
+
+        return false;
+    };
+    //https://stackoverflow.com/questions/11541695/redirecting-to-a-certain-route-based-on-condition
+    $rootScope.$on("$routeChangeStart", function (event, next, current) {
+        if ($rootScope.loginData() == null) {
+            // no logged user, we should be going to #login
+            if (next.templateUrl != "pages/login.html") {
+                // not going to #login, we should redirect now
+                $location.path("/login");
+            }
+        }
+    });
+});
+
+app.controller("mainController", function ($scope, $http, $location) {
+    $scope.isLoading = false;
+    $scope.showLoading = function () {
+        $scope.isLoading = true;
+    };
+    $scope.hideLoading = function () {
+        $scope.isLoading = false;
+    };
+
+    $scope.token = function () {
+        var loginData = $scope.loginData();
+        if (!loginData) {
+            return null;
+        }
+        return loginData.access_token;
+    }
+    $scope.ajax = function (apiUri, method, data, isAuth, successFunc, errorFunc) {
+        $scope.showLoading();
+        var headers = null;
+        if (isAuth)
+            headers = { Authorization: "Bearer " + $scope.token() };
+
+        $http({
+            url: apiUrl + apiUri,
+            method: method,
+            headers: headers,
+            data: data
+        }).then(
+            function (response) {
+                successFunc(response)
+                $scope.hideLoading();
+            },
+            function (response) {
+                errorFunc(response)
+                $scope.hideLoading();
+            }
+        );
+    };
+
+    $scope.checkAuth = function () {
+        if ($scope.loginData()) {
+            $scope.ajax("api/Account/UserInfo", "get", null, true,
+                function (response) {
+                    if (response.data.Email != $scope.loginData().userName) {
+                        $scope.logout();
+                    }
+                },
+                function (response) {
+                    if (response.status == 401) {
+                        $scope.logout();
+                    }
+                }
+            )
+        }
+       
+    };
+    $scope.checkAuth();
+    $scope.logout = function () {
+        localStorage.removeItem("login")
+        sessionStorage.removeItem("login")
+        $location.path("/login")
+    }
+
+});
+app.controller("appController", function ($scope) {
+    $scope.notes = [];
+    $scope.currentNote = null;
+    $scope.noteForm = {
+        Id: null,
+        Title: "",
+        Content: "",
+        CreationTime: "",
+        ModificationTime: ""
+    };
+
+
+    $scope.getNotes = function () {
+        $scope.ajax("api/Notes/List", "get", null, true,
+            function (response) {
+                $scope.notes = response.data;
+            },
+            function (response) {
+
+            }
+        );
+    };
+
+    $scope.showNote = function (event, note) {
+        if (event) {
+            event.preventDefault();
+        }
+        $scope.currentNote = note;
+        $scope.noteForm = angular.copy(note);
+    };
+
+    $scope.putNote = function () {
+        var data = {
+            Id: $scope.noteForm.Id,
+            Title: $scope.noteForm.Title,
+            Content: $scope.noteForm.Content
+        };
+        $scope.ajax("api/Notes/Update/" + data.Id, "put", data, true,
+            function (response) {
+                $scope.update(response.data, $scope.currentNote)
+            },
+            function () {
+
+            }
+        )
+    };
+
+    $scope.postNote = function () {
+        var data = {
+            Title: $scope.noteForm.Title,
+            Content: $scope.noteForm.Content
+        };
+        $scope.ajax("api/Notes/New", "post", data, true,
+            function (response) {
+                $scope.notes.push(response.data)
+                $scope.showNote(null,response.data)
+            },
+            function () {
+
+            }
+        )
+    };
+
+    $scope.submitNote = function () {
+        if ($scope.currentNote) {
+            $scope.putNote();
+        } else {
+            $scope.postNote();
+        }
+    }
+    $scope.newNote = function () {
+        $scope.currentNote = null;
+        $scope.noteForm = {
+            Id: null,
+            Title: "",
+            Content: "",
+            CreationTime: "",
+            ModificationTime: ""
+        };
+        //document.getElementById("title").focus();
+    };
+    $scope.deleteNote = function () {
+        if ($scope.currentNote) {
+            $scope.ajax("api/Notes/Delete/" + $scope.currentNote.Id, "delete", null, true,
+                function (response) {
+                    for (var i = 0; i < $scope.notes.length; i++) {
+                        if ($scope.notes[i] == $scope.currentNote) {
+                            $scope.notes.splice(i, 1);
+                            $scope.newNote();
+                            return;
+                        }
+                    }
+                },
+                function (response) {
+
+                }
+            )
+        }
+    }
+    $scope.getNotes();
+});
+app.controller("loginController", function ($scope, $location ,$timeout, $httpParamSerializer) {
+    $scope.currentTab = "login"
+    $scope.messageFor = "login";
+    $scope.messageType = "info";
+    $scope.messages = [];
+    $scope.error = function (data) {
+        $scope.messageFor = $scope.currentTab;
+        $scope.messageType = "danger";
+        $scope.messages = [];
+        if (data.ModelState) {
+            for (var prop in data.ModelState) {
+                for (var index in data.ModelState[prop]) {
+                    $scope.messages.push(data.ModelState[prop][index])
+                }
+
+            }
+        }
+
+        if (data.error_description) {
+            $scope.messages.push(data.error_description);
+        }
+    };
+    $scope.success = function (data) {
+        $scope.messageFor = $scope.currentTab;
+        $scope.messageType = "success";
+        $scope.messages = [data];
+    };
+    $scope.resetRegisterForm = function () {
+        $scope.registerForm.Email = "";
+        $scope.registerForm.Password = "";
+        $scope.registerForm.ConfirmPassword = "";
+    };
+    $scope.resetLoginForm = function () {
+        $scope.registerForm.Email = "";
+        $scope.registerForm.Password = "";
+        $scope.registerForm.ConfirmPassword = "";
+    };
+    $scope.registerForm = {
+        Email: "",
+        Password: "",
+        ConfirmPassword: ""
+    };
+    $scope.loginForm = {
+        grant_type: "password",
+        username: "",
+        password: ""
+    };
+    $scope.rememberMe = false;
+    $scope.$watch('currentTab', function () {
+        $scope.resetLoginForm();
+        $scope.resetRegisterForm();
+        $scope.messages = [];
+    })
+
+    $scope.registerSubmit = function () {
+        $scope.ajax("api/Account/Register", "post", $scope.registerForm, false,
+            function (response) {
+                $scope.resetRegisterForm();
+                $scope.success("Your account has been successfully created.")
+            },
+            function (response) {
+                $scope.error(response.data)
+            }
+        );
+    };
+   
+    $scope.loginSubmit = function () {
+        $scope.ajax("Token", "post",$httpParamSerializer($scope.loginForm), false,
+            function (response) {
+                localStorage.removeItem("login");
+                sessionStorage.removeItem("login");
+                var storage = $scope.rememberMe ? localStorage : sessionStorage;
+                storage["login"] = JSON.stringify(response.data);
+                $scope.resetLoginForm();
+                $scope.success("Your login is successful. Redirecting...")
+                $location.path("/");
+               
+            },
+            function (response) {
+                $scope.error(response.data)
+            }
+        );
+    };
+});
+
+
 
 $(function () {
 
-
-    //Globals
-    $body = $("body");
-    var selectedNote = null;
-    var selectedLink = null;
-    $(document).on({
-        ajaxStart: function() { $body.addClass("loading"); },
-        ajaxStop: function () { $body.removeClass("loading"); }
-    });
-    var apiUrl = 'https://localhost:44339/';
-    //var apiUrl = 'http://mynoteapi.okankaradag.com/';
-    //Funcitons
-    function checkLogin() {
-        var loginData = getloginData();
-        if (!loginData || !loginData.access_token) {
-            showLoginPage();
-            return;
-        }
-
-        //is Token Valid?
-        ajax("api/Account/UserInfo", "GET",null,
-            function (data) {
-                showAppPage();
-            },
-            function () {
-                showLoginPage();
-            }
-        )
-    }
-    function showAppPage() {
-        $(".only-logged-in").show();
-        $(".only-logged-out").hide();
-        $(".page").hide();
-        ajax("api/Notes/List", "GET", null,
-            function (data) {
-                for (var i = 0; i < data.length; i++) {
-                    addMenuLink(data[i]);
-                }
-
-                $("#page-app").show();
-            },
-            function () {
-
-            });
-       
-    }
-    function addMenuLink(note, isActive = false) {
-        var a = $('<a/>').addClass("list-group-item list-group-item-action show-note")
-            .attr("href", "#")
-            .text(note.Title)
-            .prop('note', note);
-       
-        if (isActive) {
-            $(".show-note").removeClass("active");
-            a.addClass("active");
-            selectedLink = a.get(0);
-            selectedNote = note;
-        }
-        $("#notes").prepend(a);
-        
-    }
-    function showLoginPage() {
-        $(".only-logged-in").hide();
-        $(".only-logged-out").show();
-        $(".page").hide();
-        //retrieve notes
-        $("#page-login").show();
-    }
-    function getAuthHeader() {
-        return { Authorization: "Bearer " + getloginData().access_token };
-    }
-    function ajax(url,type, data,successFunc, errorFunc) {
-        $.ajax({
-            url: apiUrl + url,
-            type: type,
-            data:data,
-            headers: getAuthHeader(),
-            success: successFunc,
-            error: errorFunc
-        })
-    }
-    function updateNote() {
-        ajax("api/Notes/Update/" + selectedNote.Id, "Put",
-            {
-                Id: selectedNote.Id,
-                Title: $('#noteTitle').val(),
-                Content:$('#noteContent').val()
-            },
-            function (data) {
-                selectedLink.note = data;
-                $(selectedLink).text(data.Title);
-                alert("Güncelleme Başarılı")
-            },
-            function () {
-
-            }
-        )
-    }
-    function addNote() {
-        ajax("api/Notes/New/", "Post",
-            {
-                Title: $('#noteTitle').val(),
-                Content: $('#noteContent').val()
-            },
-            function (data) {
-                addMenuLink(data, true);
-            },
-            function () {
-
-            }
-        )
-    }
-    function getloginData() {
-      
-        var json = sessionStorage["login"] || localStorage["login"]
-        if (json) {
-            try {
-                return JSON.parse(json);
-            } catch (e) {
-                return null;
-            }
-           
-        }
-        return null;
-        
-    }
-    function success(message) {
-        $(".tab-pane.active .message").removeClass("alert-danger").addClass("alert-success").text(message).show();
-    }
-    function error(modelState,loginerror) {
-        if (modelState) {
-            var errors = [];
-            for (var prop in modelState) {
-                for (var i = 0; i < modelState[prop].length; i++) {
-                    errors.push(modelState[prop][i]);
-                }
-            }
-        }
-        var ul = $("<ul/>")
-        for (var i = 0; i < errors.length; i++) {
-            ul.append($("<li/>").text(errors[i]));
-            $(".tab-pane.active .message").removeClass("alert-success").addClass("alert-danger").html(ul).show();
-        }
-    }
-    function resetLoginForms() {
-        $('.message').hide();
-        $("#login form").each(function () {
-            this.reset();
-        })
-    }
-    function loginError(errorMessage) {
-        $(".tab-pane.active .message").removeClass("alert-success").addClass("alert-danger").text(errorMessage).show();
-    }
-    function resetNoteForm() {
-        selectedLink = null;
-        selectedNote = null;
-        $(".show-note").removeClass("active");
-        $("#noteTitle").val("");
-        $("#noteContent").val("");
-    }
-    $('#signupform').submit(function (event) {
-        event.preventDefault();
-        var formdata = $(this).serialize();
-        $.post(apiUrl + "api/Account/Register", formdata, function (data) {
-            resetLoginForms();
-            success("created successfully");
-        }).fail(function (xhr) {
-            error(null,xhr.responseJSON.ModelState);
-        })
-    });
-    $('#signinform').submit(function (event) {
-        event.preventDefault();
-        var formdata = $(this).serialize();
-        $.post(apiUrl + "Token", formdata, function (data) {
-            var datastr = JSON.stringify(data);
-            if ($("#signinrememberme").prop("checked")) {
-                sessionStorage.removeItem("login");
-                localStorage["login"] = datastr;
-            }
-            else {
-                localStorage.removeItem("login");
-                sessionStorage["login"] = datastr;
-            }
-            resetLoginForms();
-            success("You have been Token successfullly created. Now you are being redirected..");
-
-            setTimeout(function () {
-                resetLoginForms();
-                showAppPage()
-            },1000)
-        }).fail(function (xhr) {
-            loginError(xhr.responseJSON.error_description)
-        })
-    });
-    $('#login a[data-toggle="pill"]').on('shown.hidden.bs.tab', function (e) {
-        $('#login form').each(function () {
-            this.reset();
-        })
-        resetLoginForms();
-    });
     $('.navbar-login a').click(function (e) {
         e.preventDefault();
         var href = $(this).attr("href");
         $('#pills-tab a[href="' + href + '"]').tab('show')
     })
-    $('#btnLogout').click(function (e) {
-        e.preventDefault();
-        sessionStorage.removeItem("login");
-        localStorage.removeItem("login");
-        resetNoteForm()
-        showLoginPage();
+    $('body').on('click', '#pills-tab a', function (e) {
+        e.preventDefault()
+        $(this).tab('show')
     });
-    $(".add-new-note").click(function () {
-        resetNoteForm();
-    })
-    $("body").on("click",".show-note", function (e) {
-        e.preventDefault();
-        selectedNote = this.note;
-        selectedLink = this;
-        $('#noteContent').val(selectedNote.Content);
-        $('#noteTitle').val(selectedNote.Title);
-        $(".show-note").removeClass("active");
-        $(this).addClass("active");
-    })
-    $("#frmNote").submit(function (event) {
-        event.preventDefault();
-        if (selectedNote) {
-            updateNote();
-        }
-        else {
-            addNote();
-        }
-    })
-    $("#btnDelete").click(function () {
-        if (selectedNote) {
-            if (confirm("Are you sure to delete the selected note")) {
-                ajax("api/Notes/Delete/" + selectedNote.Id, "Delete", null, function (data) {
-                    $(selectedLink).remove();
-                    resetNoteForm();
-                })
-            }
-           
-        }
-        else {
-            if (confirm("Are you sure to delete the draft")) {
-                resetNoteForm();
-            }
-        }
-    })
-    //Commands
-    checkLogin();
+    // https://stackoverflow.com/questions/37769900/how-to-change-a-scope-variable-outside-the-controller-in-angularjs
+    // https://www.hiren.dev/2014/06/how-to-access-scope-variable-outside.html
+    $('body').on('shown.bs.tab', 'a[data-toggle="pill"]', function (e) {
+        var $scope = angular.element($('[ng-view]')[0]).scope();
+        $scope.currentTab = $(e.target).attr("id") == "pills-signup-tab" ? "register" : "login"
+        $scope.$apply();
+    });
+
 })
